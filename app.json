@@ -1,29 +1,36 @@
 {
   "expo": {
-    "name": "tournament-score-app",
+    "name": "Scorify",
     "slug": "tournament-score-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FFFFFF"
       },
-      "edgeToEdgeEnabled": true
+      "package": "com.sparkyyy.tournamentscoreapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a0efd109-04e7-41f7-a990-1d44dc46228d"
+      }
     }
   }
 }

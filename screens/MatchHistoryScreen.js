@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialIcons } from '@expo/vector-icons';
 
-export default function MatchHistory({ navigation }) {
+export default function MatchHistory({ navigation, route }) {
   const [matches, setMatches] = useState([]);
+  const { hasActiveMatch, activeMatchData } = route.params || {};
 
   useEffect(() => {
     const load = async () => {
@@ -45,41 +49,109 @@ export default function MatchHistory({ navigation }) {
       ${formatInnings(match.firstInnings, '1st Innings')}
       ${formatInnings(match.secondInnings, '2nd Innings')}
       <h3>Result: ${match.winner} won by ${match.winMargin}</h3>
+      ${match.umpireNotes && match.umpireNotes.length > 0 ? `
+        <h3>📝 Umpire Notes</h3>
+        ${match.umpireNotes.map(note => `
+          <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px;">
+            <p><strong>Time:</strong> ${note.timestamp}</p>
+            <p><strong>Context:</strong> Innings ${note.innings} • Over ${note.over} • Score: ${note.score}</p>
+            <p><strong>Note:</strong> ${note.text}</p>
+          </div>
+        `).join('')}
+      ` : ''}
     `;
 
     try {
-      const file = await RNHTMLtoPDF.convert({
+      // Generate PDF using Expo Print
+      const { uri } = await Print.printToFileAsync({
         html,
-        fileName: `scorecard_${Date.now()}`,
-        directory: 'Documents'
+        base64: false
+      });
+
+      // Create a descriptive filename
+      const team1Name = match.team1.replace(/[^a-zA-Z0-9]/g, '_');
+      const team2Name = match.team2.replace(/[^a-zA-Z0-9]/g, '_');
+      const winnerName = match.winner.replace(/[^a-zA-Z0-9]/g, '_');
+      const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      
+      const fileName = `Cricket_${team1Name}_vs_${team2Name}_Winner_${winnerName}_${date}.pdf`;
+      
+      // Copy to a permanent location with descriptive name
+      const fileUri = FileSystem.documentDirectory + fileName;
+      await FileSystem.copyAsync({
+        from: uri,
+        to: fileUri
       });
 
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(file.filePath);
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Cricket Match Result'
+        });
+        Alert.alert('Success', 'Match scorecard exported successfully!');
       } else {
-        Alert.alert('Sharing not supported on this device');
+        Alert.alert('Export Complete', `Match scorecard saved to: ${fileUri}`);
       }
     } catch (e) {
       console.error('Export failed', e);
-      Alert.alert('Error', 'Failed to export PDF.');
+      Alert.alert('Error', `Failed to export PDF: ${e.message || 'Unknown error'}`);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>📜 Match History</Text>
-      {matches.length === 0 ? (
-        <Text style={styles.noMatch}>No matches played yet.</Text>
-      ) : (
-        matches.map((match, index) => (
-          <View key={index} style={styles.card}>
-            <Text style={styles.teams}>{match.team1} vs {match.team2}</Text>
-            <Text style={styles.score}>{match.team1}: {match.firstInnings.total}/{match.firstInnings.wickets}</Text>
-            <Text style={styles.score}>{match.team2}: {match.secondInnings.total}/{match.secondInnings.wickets}</Text>
-            <Text style={styles.date}>Date: {match.firstInnings.date}</Text>
-            <Text style={styles.result}>Winner: {match.winner} ({match.winMargin})</Text>
+    <LinearGradient
+      colors={['#1e3c72', '#2a5298', '#1e3c72']}
+      style={styles.gradientContainer}
+    >
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.title}>📜 Match History</Text>
+          
+          {/* Back to Current Match Button */}
+          {hasActiveMatch && activeMatchData && (
+            <View style={styles.currentMatchSection}>
+              <View style={styles.currentMatchCard}>
+                <Text style={styles.currentMatchTitle}>🏏 Current Match in Progress</Text>
+                <Text style={styles.currentMatchInfo}>
+                  {activeMatchData.battingTeam} vs {activeMatchData.bowlingTeam}
+                </Text>
+                <Text style={styles.currentMatchScore}>
+                  Innings {activeMatchData.innings}: {activeMatchData.runs}/{activeMatchData.wickets} 
+                  ({activeMatchData.overs}/{activeMatchData.maxOvers} overs)
+                </Text>
+                {activeMatchData.umpireNotes && activeMatchData.umpireNotes.length > 0 && (
+                  <Text style={styles.currentMatchNotes}>
+                    📝 {activeMatchData.umpireNotes.length} umpire note{activeMatchData.umpireNotes.length > 1 ? 's' : ''}
+                  </Text>
+                )}
+                <TouchableOpacity 
+                  style={styles.backToMatchButton} 
+                  onPress={() => navigation.goBack()}
+                >
+                  <MaterialIcons name="sports-cricket" size={20} color="#fff" />
+                  <Text style={styles.backToMatchText}>Back to Current Match</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          
+          {matches.length === 0 ? (
+            <Text style={styles.noMatch}>No matches played yet.</Text>
+          ) : (
+            matches.map((match, index) => (
+              <View key={index} style={styles.card}>
+                <Text style={styles.teams}>{match.team1} vs {match.team2}</Text>
+                <Text style={styles.score}>{match.team1}: {match.firstInnings.total}/{match.firstInnings.wickets}</Text>
+                <Text style={styles.score}>{match.team2}: {match.secondInnings.total}/{match.secondInnings.wickets}</Text>
+                <Text style={styles.date}>Date: {match.firstInnings.date}</Text>
+                <Text style={styles.result}>Winner: {match.winner} ({match.winMargin})</Text>
+                {match.umpireNotes && match.umpireNotes.length > 0 && (
+                  <Text style={styles.matchNotes}>
+                    📝 {match.umpireNotes.length} umpire note{match.umpireNotes.length > 1 ? 's' : ''}
+                  </Text>
+                )}
 
-            <View style={styles.buttonRow}>
+                <View style={styles.buttonRow}>
               <TouchableOpacity 
                 style={styles.button} 
                 onPress={() => navigation.navigate('Scorecard', { match })}
@@ -95,21 +167,34 @@ export default function MatchHistory({ navigation }) {
             </View>
           </View>
         ))
-      )}
-    </ScrollView>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  gradientContainer: {
+    flex: 1,
+  },
   container: {
-    padding: 16,
-    backgroundColor: '#f0f8ff'
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#ffffff',
     textAlign: 'center',
-    marginBottom: 20
+    marginBottom: 25,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: {width: 2, height: 2},
+    textShadowRadius: 4,
   },
   noMatch: {
     fontSize: 16,
@@ -150,6 +235,12 @@ const styles = StyleSheet.create({
     color: '#007700',
     marginTop: 6
   },
+  matchNotes: {
+    fontSize: 12,
+    color: '#6c757d',
+    fontStyle: 'italic',
+    marginTop: 5,
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -167,5 +258,65 @@ const styles = StyleSheet.create({
   buttonText: {
     color: 'white',
     fontWeight: 'bold'
-  }
+  },
+  currentMatchSection: {
+    marginBottom: 20,
+  },
+  currentMatchCard: {
+    backgroundColor: 'rgba(40, 167, 69, 0.95)',
+    padding: 15,
+    borderRadius: 12,
+    marginHorizontal: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  currentMatchTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  currentMatchInfo: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  currentMatchScore: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  currentMatchNotes: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontStyle: 'italic',
+  },
+  backToMatchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  backToMatchText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 16,
+    marginLeft: 8,
+  },
 });
